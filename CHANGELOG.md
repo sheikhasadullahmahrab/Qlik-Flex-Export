@@ -133,3 +133,26 @@ flex-export/
 | fflate | 0.8.2 | Deflate compression + ZIP assembly |
 
 Both libraries are bundled directly inside `flex-export.js` as self-executing IIFEs to avoid Qlik Cloud's RequireJS path resolution issues with external files.
+
+---
+
+## Patch — Responsive Button/Progress Swap
+**Commit:** UX improvement for small/single-line containers
+
+### Problem
+When the FlexExport control was placed in a small or single-line box on the Qlik sheet, the progress bar and status text appeared below the button — often clipped or pushed outside the container, making it invisible to the user.
+
+### Fix
+- Wrapped buttons in `.ceb-btn-area` div
+- On export start: button area hides, progress bar expands to fill the exact same space
+- On export complete/error: progress hides, button reappears
+- Progress label uses `text-overflow: ellipsis` — truncates cleanly in narrow containers
+- Works correctly in any container size including single-line boxes
+
+### Behaviour
+```
+Before click : [ Export Data ▼ ]
+During export: [████████░░░░░░░░░░░░]
+               Fetching 423,000 / 1,04...
+After done   : [ Export Data ▼ ]
+```
