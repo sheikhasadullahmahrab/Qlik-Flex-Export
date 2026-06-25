@@ -102,13 +102,17 @@ define([
   }
 
   function renderProgress($el, pct, label, isError) {
+    $el.closest('.ceb-wrap').find('.ceb-btn-area').hide();
     $el.find('.ceb-prog-bar')
        .css('width', Math.min(100, Math.max(0, pct)) + '%')
        .toggleClass('ceb-prog-error', !!isError);
     $el.find('.ceb-prog-label').text(label);
     $el.show();
   }
-  function hideProgress($el) { $el.hide(); }
+  function hideProgress($el) {
+    $el.hide();
+    $el.closest('.ceb-wrap').find('.ceb-btn-area').show();
+  }
 
   function getEngineApp(app) {
     if (app.model && app.model.enigmaModel) { log('Engine: enigmaModel'); return qlik.Promise.resolve(app.model.enigmaModel); }
@@ -233,7 +237,8 @@ define([
         : makeBtn(exportFormat, buttonLabel);
 
       $element.html(
-        '<div class="ceb-wrap">' + btns +
+        '<div class="ceb-wrap">' +
+          '<div class="ceb-btn-area">' + btns + '</div>' +
           '<div class="ceb-progress" style="display:none">' +
             '<div class="ceb-prog-track"><div class="ceb-prog-bar"></div></div>' +
             '<div class="ceb-prog-label"></div>' +
