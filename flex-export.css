@@ -1,0 +1,159 @@
+/* custom-export-button — scoped styles */
+
+.ceb-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  height: 100%;
+  padding: 8px;
+  box-sizing: border-box;
+}
+
+/* ── Base button ─────────────────────────────────────── */
+.ceb-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 500;
+  line-height: 1;
+  text-align: center;
+  transition: opacity 0.15s, background 0.15s, transform 0.1s;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.ceb-btn:active  { transform: scale(0.97); }
+.ceb-btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+
+/* ── Sizes ───────────────────────────────────────────── */
+.ceb-sm { padding: 6px 12px; font-size: 12px; }
+.ceb-md { padding: 9px 18px; font-size: 14px; }
+.ceb-lg { padding: 12px 24px; font-size: 16px; }
+
+/* ── Full width ──────────────────────────────────────── */
+.ceb-fullwidth { width: 100%; }
+
+/* ── Color styles ────────────────────────────────────── */
+.ceb-btn-default {
+  background: #ffffff;
+  color: #404040;
+  border-color: #cccccc;
+}
+.ceb-btn-default:hover { background: #f5f5f5; }
+
+.ceb-btn-primary {
+  background: #2678BF;
+  color: #ffffff;
+  border-color: #1a5f9e;
+}
+.ceb-btn-primary:hover { background: #1e66a8; }
+
+.ceb-btn-success {
+  background: #2e7d32;
+  color: #ffffff;
+  border-color: #1b5e20;
+}
+.ceb-btn-success:hover { background: #256327; }
+
+.ceb-btn-warning {
+  background: #e65100;
+  color: #ffffff;
+  border-color: #bf360c;
+}
+.ceb-btn-warning:hover { background: #cc4700; }
+
+.ceb-btn-danger {
+  background: #c62828;
+  color: #ffffff;
+  border-color: #b71c1c;
+}
+.ceb-btn-danger:hover { background: #b02020; }
+
+.ceb-btn-inverse {
+  background: #263238;
+  color: #ffffff;
+  border-color: #1a2428;
+}
+.ceb-btn-inverse:hover { background: #1e282d; }
+
+/* ── Download icon ───────────────────────────────────── */
+.ceb-icon {
+  font-size: 1.1em;
+  line-height: 1;
+}
+
+/* ── Spinner ─────────────────────────────────────────── */
+.ceb-spinner {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.ceb-spin {
+  width: 20px;
+  height: 20px;
+  border: 3px solid rgba(0,0,0,0.15);
+  border-top-color: #2678BF;
+  border-radius: 50%;
+  animation: ceb-spin 0.7s linear infinite;
+}
+
+@keyframes ceb-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Progress bar ────────────────────────────────────── */
+.ceb-progress {
+  margin-top: 10px;
+  width: 100%;
+}
+
+.ceb-prog-track {
+  width: 100%;
+  height: 8px;
+  background: rgba(0,0,0,0.10);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.ceb-prog-bar {
+  height: 100%;
+  width: 0%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #2678BF 0%, #43a8ff 100%);
+  transition: width 0.35s ease;
+}
+
+/* Pulse animation while fetching (bar < 100%) */
+.ceb-prog-bar:not([style*="100%"]) {
+  animation: ceb-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes ceb-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.7; }
+}
+
+.ceb-prog-label {
+  margin-top: 5px;
+  font-size: 11px;
+  color: #555;
+  font-family: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Progress bar error state ────────────────────────── */
+.ceb-prog-bar.ceb-prog-error {
+  background: linear-gradient(90deg, #c62828 0%, #e53935 100%);
+  animation: none;
+}

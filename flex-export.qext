@@ -1,0 +1,15 @@
+{
+  "name": "FlexExport",
+  "description": "Configurable export button for Qlik Sense. Add unlimited dimensions and measures, rename column headers, and export to Excel or CSV. Handles 1M+ row datasets with compressed XLSX output via raw XML and fflate ZIP.",
+  "icon": "download",
+  "type": "visualization",
+  "version": "1.2.0",
+  "author": "Sheikh Asadullah Mahrab",
+  "email": "sheikhasadullahmahrab@gmail.com",
+  "keywords": "qlik-sense, visualization-extension, export, excel, csv, flex-export",
+  "license": "MIT",
+  "homepage": "",
+  "dependencies": {
+    "qlik-sense": ">=3.0.0"
+  }
+}
