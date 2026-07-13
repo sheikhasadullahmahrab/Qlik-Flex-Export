@@ -484,7 +484,7 @@ define([
               var zipBlob  = new Blob([zipBytes], { type: 'application/zip' });
               log('STEP 8: ZIP blob=' + (zipBlob.size/1048576).toFixed(1) + 'MB elapsed=' + elapsed());
 
-              triggerDownload(zipBlob, baseName + '_v' + VERSION + '.zip', 'application/zip');
+              triggerDownload(zipBlob, baseName + '.zip', 'application/zip');
               log('========== EXPORT COMPLETE ==========');
               finish(allRows.length);
             }
