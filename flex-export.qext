@@ -1,5 +1,5 @@
 {
-  "name": "FlexExport",
+  "name": "FlexExport v1.2.0",
   "description": "Configurable export button for Qlik Sense. Add unlimited dimensions and measures, rename column headers, and export to Excel or CSV. Handles 1M+ row datasets with compressed XLSX output via raw XML and fflate ZIP.",
   "icon": "download",
   "type": "visualization",

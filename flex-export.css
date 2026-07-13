@@ -1,140 +1,132 @@
-/* custom-export-button — scoped styles */
+/*
+ * FlexExport v1.2.0 — Styles
+ * Author: Sheikh Asadullah Mahrab
+ * Scoped to .ceb-* classes — no global leakage
+ */
 
+/* ── Outer container — fills the Qlik object cell entirely ────────────────── */
 .ceb-wrap {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
+  align-items: stretch;       /* children stretch to full width */
+  justify-content: stretch;
+  width: 100%;
   height: 100%;
-  padding: 8px;
+  padding: 4px;               /* minimal padding — works in single-row boxes */
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* ── Button area — fills wrap, holds one or two buttons ───────────────────── */
+.ceb-btn-area {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  gap: 4px;
   box-sizing: border-box;
 }
 
-/* ── Base button ─────────────────────────────────────── */
+/* ── Base button ──────────────────────────────────────────────────────────── */
 .ceb-btn {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 4px;
+  flex: 1;                    /* fills available height in the btn-area */
+  min-height: 0;              /* allows shrinking below content size */
+  width: 100%;
   border: 1px solid transparent;
   border-radius: 4px;
   cursor: pointer;
   font-family: inherit;
   font-weight: 500;
-  line-height: 1;
+  line-height: 1.2;
   text-align: center;
-  transition: opacity 0.15s, background 0.15s, transform 0.1s;
   white-space: nowrap;
-  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
+  transition: background 0.15s, transform 0.1s;
+  padding: 4px 8px;           /* compact padding — always fits */
 }
 
-.ceb-btn:active  { transform: scale(0.97); }
+.ceb-btn:active   { transform: scale(0.97); }
 .ceb-btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
 
-/* ── Sizes ───────────────────────────────────────────── */
-.ceb-sm { padding: 6px 12px; font-size: 12px; }
-.ceb-md { padding: 9px 18px; font-size: 14px; }
-.ceb-lg { padding: 12px 24px; font-size: 16px; }
+/* ── Font sizes by size variant ───────────────────────────────────────────── */
+.ceb-sm { font-size: 11px; }
+.ceb-md { font-size: 13px; }
+.ceb-lg { font-size: 15px; }
 
-/* ── Full width ──────────────────────────────────────── */
+/* ── Full width (already default via flex — kept for compatibility) ────────── */
 .ceb-fullwidth { width: 100%; }
 
-/* ── Color styles ────────────────────────────────────── */
-.ceb-btn-default {
-  background: #ffffff;
-  color: #404040;
-  border-color: #cccccc;
-}
-.ceb-btn-default:hover { background: #f5f5f5; }
+/* ── Color themes ─────────────────────────────────────────────────────────── */
+.ceb-btn-default  { background: #ffffff; color: #404040; border-color: #cccccc; }
+.ceb-btn-default:hover  { background: #f5f5f5; }
 
-.ceb-btn-primary {
-  background: #2678BF;
-  color: #ffffff;
-  border-color: #1a5f9e;
-}
-.ceb-btn-primary:hover { background: #1e66a8; }
+.ceb-btn-primary  { background: #2678BF; color: #ffffff; border-color: #1a5f9e; }
+.ceb-btn-primary:hover  { background: #1e66a8; }
 
-.ceb-btn-success {
-  background: #2e7d32;
-  color: #ffffff;
-  border-color: #1b5e20;
-}
-.ceb-btn-success:hover { background: #256327; }
+.ceb-btn-success  { background: #2e7d32; color: #ffffff; border-color: #1b5e20; }
+.ceb-btn-success:hover  { background: #256327; }
 
-.ceb-btn-warning {
-  background: #e65100;
-  color: #ffffff;
-  border-color: #bf360c;
-}
-.ceb-btn-warning:hover { background: #cc4700; }
+.ceb-btn-warning  { background: #e65100; color: #ffffff; border-color: #bf360c; }
+.ceb-btn-warning:hover  { background: #cc4700; }
 
-.ceb-btn-danger {
-  background: #c62828;
-  color: #ffffff;
-  border-color: #b71c1c;
-}
-.ceb-btn-danger:hover { background: #b02020; }
+.ceb-btn-danger   { background: #c62828; color: #ffffff; border-color: #b71c1c; }
+.ceb-btn-danger:hover   { background: #b02020; }
 
-.ceb-btn-inverse {
-  background: #263238;
-  color: #ffffff;
-  border-color: #1a2428;
-}
-.ceb-btn-inverse:hover { background: #1e282d; }
+.ceb-btn-inverse  { background: #263238; color: #ffffff; border-color: #1a2428; }
+.ceb-btn-inverse:hover  { background: #1e282d; }
 
-/* ── Download icon ───────────────────────────────────── */
+/* ── Download icon ─────────────────────────────────────────────────────────── */
 .ceb-icon {
-  font-size: 1.1em;
+  font-size: 1em;
   line-height: 1;
+  flex-shrink: 0;
 }
 
-/* ── Spinner ─────────────────────────────────────────── */
-.ceb-spinner {
-  margin-top: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-}
-
-.ceb-spin {
-  width: 20px;
-  height: 20px;
-  border: 3px solid rgba(0,0,0,0.15);
-  border-top-color: #2678BF;
-  border-radius: 50%;
-  animation: ceb-spin 0.7s linear infinite;
-}
-
-@keyframes ceb-spin {
-  to { transform: rotate(360deg); }
-}
-
-/* ── Progress bar ────────────────────────────────────── */
+/* ── Progress container — replaces button area during export ──────────────── */
 .ceb-progress {
-  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: stretch;
   width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 4px 2px;
+  box-sizing: border-box;
+  gap: 3px;
 }
 
+/* ── Progress track + bar ─────────────────────────────────────────────────── */
 .ceb-prog-track {
   width: 100%;
-  height: 8px;
-  background: rgba(0,0,0,0.10);
-  border-radius: 4px;
+  height: 6px;
+  min-height: 6px;
+  background: rgba(0, 0, 0, 0.10);
+  border-radius: 3px;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .ceb-prog-bar {
   height: 100%;
   width: 0%;
-  border-radius: 4px;
+  border-radius: 3px;
   background: linear-gradient(90deg, #2678BF 0%, #43a8ff 100%);
   transition: width 0.35s ease;
+  animation: ceb-pulse 1.8s ease-in-out infinite;
 }
 
-/* Pulse animation while fetching (bar < 100%) */
-.ceb-prog-bar:not([style*="100%"]) {
-  animation: ceb-pulse 1.8s ease-in-out infinite;
+.ceb-prog-bar.ceb-prog-error {
+  background: linear-gradient(90deg, #c62828 0%, #e53935 100%);
+  animation: none;
 }
 
 @keyframes ceb-pulse {
@@ -142,59 +134,14 @@
   50%       { opacity: 0.7; }
 }
 
+/* ── Progress label ───────────────────────────────────────────────────────── */
 .ceb-prog-label {
-  margin-top: 5px;
-  font-size: 11px;
-  color: #555;
-  font-family: inherit;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* ── Progress bar error state ────────────────────────── */
-.ceb-prog-bar.ceb-prog-error {
-  background: linear-gradient(90deg, #c62828 0%, #e53935 100%);
-  animation: none;
-}
-
-/* ── Responsive swap: button hides, progress fills its space ── */
-.ceb-btn-area {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  height: 100%;
-}
-
-.ceb-progress {
-  /* Fills exactly the same space the button occupied */
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  padding: 4px 2px;
-  box-sizing: border-box;
-}
-
-.ceb-prog-track {
-  width: 100%;
-  height: 6px;
-  background: rgba(0,0,0,0.10);
-  border-radius: 3px;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.ceb-prog-label {
-  margin-top: 3px;
   font-size: 10px;
   color: #555;
   font-family: inherit;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  line-height: 1.3;
+  line-height: 1.2;
   flex-shrink: 0;
 }
