@@ -159,31 +159,47 @@ After done   : [ Export Data ▼ ]
 
 ---
 
-## Patch — Multi-file ZIP export + SST corruption fix
+## v1.3.0 — Stable Release
+**Theme: Progress bar now visible throughout entire export. paint() guard.**
 
-### Problems fixed
+### Changes from v1.2.0
 
-**1. Excel repair dialog on open**
-The `<sst count="X">` attribute in sharedStrings.xml was set to the number of unique strings, but Excel expects it to be the total number of string cell references across the entire worksheet (which is much larger). Excel detected this mismatch and triggered the repair dialog. Fixed by tracking `totalCount` during SST build and using it for the `count` attribute.
+**Fix 1 — Progress bar invisible during export (critical)**
+Root cause: Qlik calls `paint()` on every engine response, including each
+`getHyperCubeData` page response. `paint()` unconditionally called
+`$element.html()` which wiped the progress div and restored the button,
+while the export continued running against a detached DOM node.
 
-**2. Row truncation above Excel's limit**
-Excel hard limit is 1,048,575 data rows per sheet. Datasets above this are silently truncated. Fixed with automatic multi-file split + ZIP download.
+Fix: `$element.data('ceb-exporting', true/false)` flag:
+- Set to `true` inside `setTimeout` before export logic begins
+- `paint()` checks flag and skips `$element.html()` re-render if `true`
+- Cleared to `false` in `finish()`, `setError()`, and all early-exit paths
+- Progress bar now stays visible for the entire duration of export
 
-### New behaviour
+**Fix 2 — Progress bar not visible on initial click**
+`renderProgress()` called before JS call stack emptied — browser had no
+opportunity to repaint. Fixed with `setTimeout(fn, 50)` to yield a paint
+frame before export logic begins.
 
-| Row count | Output |
+**Fix 3 — Button not visible in small/single-row Qlik boxes**
+CSS had duplicate declarations with conflicting values. `padding: 8px` on
+`.ceb-wrap` consumed most of the available height in narrow containers.
+Fixed with unified single-declaration CSS, `padding: 4px`, and `flex: 1`
+on buttons to fill available space adaptively.
+
+**Fix 4 — Excel repair dialog on open**
+SST `count` attribute was set to unique string count instead of total
+string cell references. Fixed with `totalCount` tracking.
+
+**Fix 5 — Row truncation / multi-file export**
+Datasets > 900K rows now split into 500K-row XLSX parts inside a ZIP.
+Single file for ≤ 900K rows. ZIP filename uses date-time stamp only.
+
+### Version history summary
+
+| Version | Key change |
 |---|---|
-| ≤ 900,000 | Single `.xlsx` file (unchanged) |
-| > 900,000 | Multiple `.xlsx` files in a `.zip` |
-
-- Split size: 500,000 rows per file
-- File naming: `20250625_143022_part1.xlsx`, `_part2.xlsx` etc. inside `20250625_143022.zip`
-- Each part is a fully valid, independently openable XLSX file
-- Parts reuse the same headers row
-- XLSX files stored uncompressed inside the ZIP (already deflated internally) for fastest extraction
-
-### Why 900K threshold / 500K split
-- 900K gives ~148K rows of headroom before Excel's 1,048,575 limit
-- Accounts for dataset growth between exports
-- 500K rows per file opens comfortably in Excel (~30-40MB compressed)
-- Consistent split size regardless of total row count
+| 1.0.0 | Working baseline — session objects, sequential fetch, CSV |
+| 1.1.0 | Parallel fetch — 150s vs 325s for 1M rows |
+| 1.2.0 | Raw XML XLSX + SST + fflate compression — 40-80MB vs 320MB |
+| 1.3.0 | paint() guard — progress bar visible throughout export |
