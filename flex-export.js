@@ -281,6 +281,13 @@ define([
 
         $btn.prop('disabled', true);
         renderProgress($progress, 0, 'Starting...');
+
+        // Yield to browser paint cycle before starting work.
+        // Without this, the DOM swap (hide button, show progress) is queued
+        // but never painted — the browser only repaints when JS call stack empties.
+        // setTimeout(fn, 50) guarantees at least one repaint frame before export begins.
+        setTimeout(function() {
+
         log('========== EXPORT START v' + VERSION + ' ==========');
         log('Format:' + format + ' File:' + baseName + ' PageSize:' + pageSize + ' Concurrency:' + concurrency);
 
@@ -477,7 +484,7 @@ define([
               var zipBlob  = new Blob([zipBytes], { type: 'application/zip' });
               log('STEP 8: ZIP blob=' + (zipBlob.size/1048576).toFixed(1) + 'MB elapsed=' + elapsed());
 
-              triggerDownload(zipBlob, baseName + '.zip', 'application/zip');
+              triggerDownload(zipBlob, baseName + '_v' + VERSION + '.zip', 'application/zip');
               log('========== EXPORT COMPLETE ==========');
               finish(allRows.length);
             }
@@ -488,6 +495,8 @@ define([
             setError('Export failed: ' + (e && e.message ? e.message : 'Unknown') + ' — see F12 console');
             alert('Export failed:\n' + (e && e.message ? e.message : String(e)));
           });
+
+        }, 50); // end setTimeout — allows browser to paint progress bar before export starts
       });
 
       return qlik.Promise.resolve();
