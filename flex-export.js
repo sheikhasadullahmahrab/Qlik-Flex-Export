@@ -227,6 +227,14 @@ define([
 
       log('paint() | cols:' + totalCols + ' | fmt:' + exportFormat + ' | pageSize:' + pageSize + ' | concurrency:' + concurrency);
 
+      // Guard: if export is running, skip re-render entirely.
+      // paint() fires on every engine response (including getHyperCubeData),
+      // which would wipe the progress bar and restore the button mid-export.
+      if ($element.data('ceb-exporting')) {
+        log('paint() skipped — export in progress');
+        return qlik.Promise.resolve();
+      }
+
       var icon     = showIcon ? '<span class="ceb-icon">&#8595;</span> ' : '';
       var wClass   = buttonWidth ? ' ceb-fullwidth' : '';
       var btnClass = 'ceb-btn ceb-btn-' + buttonStyle + ' ceb-' + buttonSize + wClass;
@@ -264,11 +272,19 @@ define([
         function setError(label) {
           cerr(label);
           renderProgress($progress, 100, label, true);
-          setTimeout(function() { hideProgress($progress); $btn.prop('disabled', false); }, 6000);
+          setTimeout(function() {
+            $element.data('ceb-exporting', false); // allow paint() to re-render again
+            hideProgress($progress);
+            $btn.prop('disabled', false);
+          }, 6000);
         }
         function finish(n) {
           setProgress(100, 'Done! ' + n.toLocaleString() + ' rows — ' + elapsed());
-          setTimeout(function() { hideProgress($progress); $btn.prop('disabled', false); }, 4000);
+          setTimeout(function() {
+            $element.data('ceb-exporting', false); // allow paint() to re-render again
+            hideProgress($progress);
+            $btn.prop('disabled', false);
+          }, 4000);
         }
         function cleanup(obj) {
           if (savedEApp && obj) {
@@ -288,13 +304,16 @@ define([
         // setTimeout(fn, 50) guarantees at least one repaint frame before export begins.
         setTimeout(function() {
 
+        // Mark element as exporting — prevents paint() from wiping progress bar
+        $element.data('ceb-exporting', true);
+
         log('========== EXPORT START v' + VERSION + ' ==========');
         log('Format:' + format + ' File:' + baseName + ' PageSize:' + pageSize + ' Concurrency:' + concurrency);
 
         // STEP 1: fflate
         var fflate;
         try { fflate = getFflate(); log('STEP 1 OK: fflate.zipSync=' + typeof fflate.zipSync); }
-        catch(e) { setError('fflate not loaded — see console.'); return; }
+        catch(e) { $element.data('ceb-exporting', false); setError('fflate not loaded — see console.'); return; }
 
         // STEP 2: Columns
         var hcNow   = layout.qHyperCube;
@@ -302,7 +321,7 @@ define([
         var measNow = (hcNow && hcNow.qMeasureInfo)   || [];
         var colsNow = dimsNow.length + measNow.length;
         log('STEP 2: dims=' + dimsNow.length + ' meas=' + measNow.length + ' cols=' + colsNow);
-        if (colsNow === 0) { setError('No columns defined.'); alert('Add at least one dimension or measure.'); return; }
+        if (colsNow === 0) { $element.data('ceb-exporting', false); setError('No columns defined.'); alert('Add at least one dimension or measure.'); return; }
 
         // STEP 3: Session HC
         var sessionDims = [], sessionMeas = [];
