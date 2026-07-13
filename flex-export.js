@@ -76,6 +76,8 @@ define([
   $('<style>').html(cssContent).appendTo('head');
 
   var XLSX_ROW_LIMIT      = 1048575;
+  var SPLIT_THRESHOLD     = 900000;  // above this: split into multiple files + ZIP
+  var ROWS_PER_FILE       = 500000;  // rows per XLSX part
   var DEFAULT_PAGE_SIZE   = 500;
   var DEFAULT_CONCURRENCY = 6;
 
@@ -400,29 +402,85 @@ define([
               return;
             }
 
-            // XLSX path — all operations produce Uint8Array, never a joined string
-            setProgress(76, 'Building Shared String Table...');
-            log('STEP 8a: Building SST...');
-            var sst = buildSST(headers, allRows);
-            log('STEP 8a: SST done. unique=' + sst.strings.length + ' elapsed=' + elapsed());
+            // ── XLSX path ────────────────────────────────────────────────────
+            // If rows > SPLIT_THRESHOLD: split into ROWS_PER_FILE chunks,
+            // write each as a separate XLSX, bundle all into a ZIP download.
+            // If rows <= SPLIT_THRESHOLD: single XLSX download as before.
 
-            setProgress(80, 'Encoding worksheet XML (' + allRows.length.toLocaleString() + ' rows)...');
-            log('STEP 8b: Building sheet XML bytes (chunked, no string join)...');
-            var sheetBytes = buildSheetBytes(headers, allRows, sst.index, setProgress, elapsed);
-            log('STEP 8b: Sheet bytes=' + (sheetBytes.length/1048576).toFixed(1) + 'MB elapsed=' + elapsed());
+            var needsSplit = allRows.length > SPLIT_THRESHOLD;
+            log('STEP 8: rows=' + allRows.length + ' needsSplit=' + needsSplit +
+                ' threshold=' + SPLIT_THRESHOLD + ' rowsPerFile=' + ROWS_PER_FILE);
 
-            setProgress(91, 'Encoding SST XML...');
-            var sstBytes = buildSstBytes(sst.strings);
-            log('STEP 8c: SST bytes=' + (sstBytes.length/1024).toFixed(0) + 'KB');
+            if (!needsSplit) {
+              // ── Single file ──────────────────────────────────────────────
+              setProgress(76, 'Building Shared String Table...');
+              var sst = buildSST(headers, allRows);
+              log('STEP 8a: SST unique=' + sst.strings.length + ' total=' + sst.totalCount + ' elapsed=' + elapsed());
 
-            setProgress(93, 'Compressing and packaging XLSX...');
-            log('STEP 8d: ZIP compress...');
-            var xlsxBlob = buildXlsxZip(fflate, sheetBytes, sstBytes, headers, sheetName);
-            log('STEP 8d: XLSX blob=' + (xlsxBlob.size/1048576).toFixed(1) + 'MB elapsed=' + elapsed());
+              setProgress(80, 'Encoding worksheet XML (' + allRows.length.toLocaleString() + ' rows)...');
+              var sheetBytes = buildSheetBytes(headers, allRows, sst.index, setProgress, elapsed);
+              log('STEP 8b: sheetBytes=' + (sheetBytes.length/1048576).toFixed(1) + 'MB elapsed=' + elapsed());
 
-            triggerDownload(xlsxBlob, baseName + '.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-            log('========== EXPORT COMPLETE ==========');
-            finish(allRows.length);
+              setProgress(91, 'Encoding SST XML...');
+              var sstBytes = buildSstBytes(sst);
+              log('STEP 8c: sstBytes=' + (sstBytes.length/1024).toFixed(0) + 'KB');
+
+              setProgress(93, 'Compressing XLSX...');
+              var xlsxBytes = buildXlsxZip(fflate, sheetBytes, sstBytes, sheetName);
+              var xlsxBlob  = new Blob([xlsxBytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+              log('STEP 8d: xlsxBlob=' + (xlsxBlob.size/1048576).toFixed(1) + 'MB elapsed=' + elapsed());
+
+              triggerDownload(xlsxBlob, baseName + '.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+              log('========== EXPORT COMPLETE ==========');
+              finish(allRows.length);
+
+            } else {
+              // ── Multi-file ZIP ───────────────────────────────────────────
+              // Split allRows into ROWS_PER_FILE chunks
+              var chunks = [];
+              for (var ci = 0; ci < allRows.length; ci += ROWS_PER_FILE) {
+                chunks.push(allRows.slice(ci, Math.min(ci + ROWS_PER_FILE, allRows.length)));
+              }
+              log('STEP 8: splitting into ' + chunks.length + ' files of max ' + ROWS_PER_FILE + ' rows');
+
+              var zipEntries = {};
+              var totalParts = chunks.length;
+
+              for (var pi = 0; pi < totalParts; pi++) {
+                var partRows  = chunks[pi];
+                var partLabel = '_part' + (pi + 1);
+                var partName  = baseName + partLabel + '.xlsx';
+                var pctBase   = 76 + Math.round((pi / totalParts) * 18); // 76%-94%
+
+                setProgress(pctBase,
+                  'Building part ' + (pi+1) + ' of ' + totalParts +
+                  ' (' + partRows.length.toLocaleString() + ' rows)...');
+                log('STEP 8 part ' + (pi+1) + '/' + totalParts +
+                    ': rows=' + partRows.length + ' file=' + partName);
+
+                var partSst       = buildSST(headers, partRows);
+                var partSheetB    = buildSheetBytes(headers, partRows, partSst.index, setProgress, elapsed);
+                var partSstB      = buildSstBytes(partSst);
+                // buildXlsxZip returns Uint8Array directly — no Blob/await needed
+                var partBytes = buildXlsxZip(fflate, partSheetB, partSstB, sheetName);
+                // Store in ZIP with level:0 — xlsx already deflated internally
+                zipEntries[partName] = [partBytes, { level: 0 }];
+
+                log('STEP 8 part ' + (pi+1) + ' done. size=' +
+                    (partBytes.length/1048576).toFixed(1) + 'MB elapsed=' + elapsed());
+              }
+
+              setProgress(95, 'Packaging ZIP (' + totalParts + ' files)...');
+              log('STEP 8: building ZIP with ' + totalParts + ' xlsx files...');
+
+              var zipBytes = fflate.zipSync(zipEntries);
+              var zipBlob  = new Blob([zipBytes], { type: 'application/zip' });
+              log('STEP 8: ZIP blob=' + (zipBlob.size/1048576).toFixed(1) + 'MB elapsed=' + elapsed());
+
+              triggerDownload(zipBlob, baseName + '.zip', 'application/zip');
+              log('========== EXPORT COMPLETE ==========');
+              finish(allRows.length);
+            }
           })
           .catch(function(e) {
             cerr('EXPORT FAILED: ' + (e && e.message ? e.message : String(e)));
@@ -444,10 +502,11 @@ define([
 
   /* ── SST: collect unique strings ─────────────────────────────────────── */
   function buildSST(headers, rows) {
-    var map = Object.create(null), strings = [];
+    var map = Object.create(null), strings = [], totalCount = 0;
     function intern(s) {
       s = (s === null || s === undefined) ? '' : String(s);
       if (map[s] === undefined) { map[s] = strings.length; strings.push(s); }
+      totalCount++; // track every string cell usage for SST count attribute
       return map[s];
     }
     headers.forEach(function(h) { intern(h); });
@@ -456,9 +515,10 @@ define([
       for (var c = 0; c < row.length; c++) {
         var val = row[c], num = parseFloat(val);
         if (val === '' || isNaN(num) || !isFinite(num)) { intern(val); }
+        // numeric cells don't go into SST — no totalCount increment needed
       }
     }
-    return { strings: strings, index: map };
+    return { strings: strings, index: map, totalCount: totalCount };
   }
 
   /* ── Sheet XML → Uint8Array, encoded in row-sized chunks ─────────────── */
@@ -548,17 +608,20 @@ define([
   }
 
   /* ── SST XML → Uint8Array ─────────────────────────────────────────────── */
-  function buildSstBytes(strings) {
+  function buildSstBytes(sst) {
+    // sst = { strings, index, totalCount }
+    // count    = total string cell references across entire sheet (Excel validates this)
+    // uniqueCount = number of unique strings
+    var strings = sst.strings, totalCount = sst.totalCount || strings.length;
     function xmlEsc(s) {
       return String(s)
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+        .replace(/"/g, '&quot;').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x1A\x1B]/g, '');
     }
-    // SST is small (unique strings only) — safe to build as one string then encode
     var parts = [
       '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
       '<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"',
-      ' count="' + strings.length + '" uniqueCount="' + strings.length + '">'
+      ' count="' + totalCount + '" uniqueCount="' + strings.length + '">'
     ];
     for (var i = 0; i < strings.length; i++) {
       parts.push('<si><t xml:space="preserve">' + xmlEsc(strings[i]) + '</t></si>');
@@ -568,7 +631,7 @@ define([
   }
 
   /* ── Assemble XLSX ZIP ────────────────────────────────────────────────── */
-  function buildXlsxZip(fflate, sheetBytes, sstBytes, headers, sheetName) {
+  function buildXlsxZip(fflate, sheetBytes, sstBytes, sheetName) {
     var enc = new TextEncoder();
 
     var stylesXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
@@ -624,7 +687,8 @@ define([
     });
 
     log('buildXlsxZip: zipped=' + (zipped.length/1048576).toFixed(1) + 'MB');
-    return new Blob([zipped], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    // Return raw bytes — caller wraps in Blob as needed
+    return zipped;
   }
 
   /* ── CSV writer ──────────────────────────────────────────────────────── */

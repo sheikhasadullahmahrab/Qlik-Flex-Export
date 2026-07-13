@@ -156,3 +156,34 @@ During export: [████████░░░░░░░░░░░░]
                Fetching 423,000 / 1,04...
 After done   : [ Export Data ▼ ]
 ```
+
+---
+
+## Patch — Multi-file ZIP export + SST corruption fix
+
+### Problems fixed
+
+**1. Excel repair dialog on open**
+The `<sst count="X">` attribute in sharedStrings.xml was set to the number of unique strings, but Excel expects it to be the total number of string cell references across the entire worksheet (which is much larger). Excel detected this mismatch and triggered the repair dialog. Fixed by tracking `totalCount` during SST build and using it for the `count` attribute.
+
+**2. Row truncation above Excel's limit**
+Excel hard limit is 1,048,575 data rows per sheet. Datasets above this are silently truncated. Fixed with automatic multi-file split + ZIP download.
+
+### New behaviour
+
+| Row count | Output |
+|---|---|
+| ≤ 900,000 | Single `.xlsx` file (unchanged) |
+| > 900,000 | Multiple `.xlsx` files in a `.zip` |
+
+- Split size: 500,000 rows per file
+- File naming: `20250625_143022_part1.xlsx`, `_part2.xlsx` etc. inside `20250625_143022.zip`
+- Each part is a fully valid, independently openable XLSX file
+- Parts reuse the same headers row
+- XLSX files stored uncompressed inside the ZIP (already deflated internally) for fastest extraction
+
+### Why 900K threshold / 500K split
+- 900K gives ~148K rows of headroom before Excel's 1,048,575 limit
+- Accounts for dataset growth between exports
+- 500K rows per file opens comfortably in Excel (~30-40MB compressed)
+- Consistent split size regardless of total row count
