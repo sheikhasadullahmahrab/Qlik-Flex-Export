@@ -67,7 +67,7 @@ define([
 ], function(qlik, $, cssContent) {
   'use strict';
 
-  var VERSION = '1.3.4';
+  var VERSION = '1.3.5';
   var LOG = '[CEB v' + VERSION + ']';
   function log()  { var a = Array.prototype.slice.call(arguments); console.log.apply(console,  [LOG].concat(a)); }
   function warn() { var a = Array.prototype.slice.call(arguments); console.warn.apply(console, [LOG].concat(a)); }
@@ -694,12 +694,19 @@ define([
         var val  = row[c];
         var cref = cols[c] + rowNum;
         var num  = parseFloat(val);
-        if (val !== '' && !isNaN(num) && isFinite(num)) {
-          // Numeric: style 0 (default number format)
+        // Strict numeric check: ONLY write as number if the ENTIRE string is numeric.
+        // parseFloat('25/Feb/2014')=25, parseFloat('24B-0014-14')=24, parseFloat('+971...')=971...
+        // All of these would be wrongly treated as numbers without a strict regex check.
+        // Regex: optional sign, digits, optional decimal digits, optional exponent — nothing else.
+        var isStrictNum = (val !== '' && val !== null && val !== undefined &&
+                           /^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(String(val).trim()) &&
+                           isFinite(num));
+        if (isStrictNum) {
+          // Pure numeric cell — style 0 (default number format)
           rParts.push('<c r="' + cref + '"><v>' + num + '</v></c>');
         } else {
-          // String: style 2 (numFmtId=49, text @ format)
-          // Prevents Excel auto-converting dates, phone numbers, IDs with leading zeros
+          // String cell — style 2 (numFmtId=49, text @ format)
+          // Preserves dates, phone numbers, reference codes, mixed strings exactly as in Qlik
           var si = sstIndex[String(val !== undefined && val !== null ? val : '')];
           rParts.push('<c r="' + cref + '" t="s" s="2"><v>' + si + '</v></c>');
         }

@@ -325,3 +325,36 @@ Diagnostic logging removed for clean production build.
 ### Summary of all changes since v1.3.3
 - Removed all diagnostic console logging (STEP 3 DIAG, STEP 5 DIAG)
 - Production-ready clean build
+
+---
+
+## v1.3.5 — Strict numeric cell detection
+
+### Problem
+Exported file showed truncated/wrong values for several columns:
+- `ApplicationRefNo` "24B-0014-14" → exported as `24`
+- `App Date` "25/Feb/2014" → exported as `25`
+- `Khidmati Code` "371-001-005-000" → exported as `371`
+- `Mobile` "+971508137791" → exported as `9.71508E+11`
+
+### Root cause
+`parseFloat()` parses the leading numeric portion of any string:
+- `parseFloat("25/Feb/2014")` = `25` ← partial match, WRONG
+- `parseFloat("24B-0014-14")` = `24` ← partial match, WRONG
+- `parseFloat("+971508137791")` = `971508137791` ← drops + prefix, WRONG
+
+All of these were incorrectly treated as numeric cells and written
+as numbers, losing everything after the first numeric portion.
+
+### Fix
+Replaced `!isNaN(parseFloat(val))` with a strict regex:
+```
+/^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(val.trim())
+```
+Only pure numeric strings match — digits, optional decimal, optional
+exponent, nothing else. Mixed strings like "24B-0014-14", dates like
+"25/Feb/2014", and phone numbers like "+971508137791" all correctly
+go to the string cell path and are preserved exactly as in Qlik.
+
+Values correctly numeric: `-2485`, `10`, `0.43`, `9.14` → number cells ✓
+Values correctly string: `24B-0014-14`, `25/Feb/2014`, `+971...` → string cells ✓
