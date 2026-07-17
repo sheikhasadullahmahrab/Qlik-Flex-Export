@@ -67,7 +67,7 @@ define([
 ], function(qlik, $, cssContent) {
   'use strict';
 
-  var VERSION = '1.3.3';
+  var VERSION = '1.3.4';
   var LOG = '[CEB v' + VERSION + ']';
   function log()  { var a = Array.prototype.slice.call(arguments); console.log.apply(console,  [LOG].concat(a)); }
   function warn() { var a = Array.prototype.slice.call(arguments); console.warn.apply(console, [LOG].concat(a)); }
@@ -416,12 +416,7 @@ define([
           });
         }
 
-        // STEP 3 DIAGNOSTICS
-        log('STEP 3 DIAG: qDimensions available=' + !!(hcNow && hcNow.qDimensions && hcNow.qDimensions.length));
-        log('STEP 3 DIAG: === sessionDims built ===');
-        sessionDims.forEach(function(d, i) {
-          log('STEP 3 DIAG sessionDim['+i+'] qDef=' + JSON.stringify(d.qDef));
-        });
+        log('STEP 3: ' + sessionDims.length + ' dims, ' + sessionMeas.length + ' measures built');
 
         // STEP 4: Headers
         var headers = [];
@@ -445,20 +440,7 @@ define([
             return sessionObj.getLayout().then(function(sl) {
               var rc = sl.qHyperCube.qSize.qcy;
               log('STEP 5: rowCount=' + rc);
-              // DIAG: log first row raw cell data from session object
-            log('STEP 5 DIAG: rowCount=' + rc + ' — fetching 1 diagnostic row...');
-            sessionObj.getHyperCubeData('/qHyperCubeDef', [{qLeft:0, qTop:0, qWidth:colsNow, qHeight:1}])
-              .then(function(diagData) {
-                if (diagData && diagData[0] && diagData[0].qMatrix && diagData[0].qMatrix[0]) {
-                  diagData[0].qMatrix[0].forEach(function(cell, ci) {
-                    log('STEP 5 DIAG cell['+ci+'] qText=' + JSON.stringify(cell.qText) +
-                        ' qNum=' + cell.qNum +
-                        ' qType=' + cell.qType +
-                        ' qIsNull=' + cell.qIsNull);
-                  });
-                }
-              }).catch(function(e) { log('STEP 5 DIAG fetch failed: ' + e.message); });
-            return { sessionObj: sessionObj, rowCount: rc };
+              return { sessionObj: sessionObj, rowCount: rc };
             });
           })
           .then(function(result) {

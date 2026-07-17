@@ -309,3 +309,19 @@ The Qlik engine then uses this to format `qText` correctly.
 
 ### Also fixed
 - `obj is not defined` crash in diagnostic code (was `obj`, should be `sessionObj`)
+
+---
+
+## v1.3.4 — Stable release: format fix confirmed working
+
+### Confirmed by live diagnostic
+```
+STEP 3: format detected in expr "=Date(SubmitDate, 'DD/MMM/YYYY')" → type=D fmt=DD/MMM/YYYY
+STEP 5 DIAG cell[5] qText="25/Feb/2014" qNum=41695
+```
+`qText` now returns the fully formatted date string. Fix from v1.3.3 confirmed.
+Diagnostic logging removed for clean production build.
+
+### Summary of all changes since v1.3.3
+- Removed all diagnostic console logging (STEP 3 DIAG, STEP 5 DIAG)
+- Production-ready clean build
