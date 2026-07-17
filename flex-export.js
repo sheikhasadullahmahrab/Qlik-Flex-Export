@@ -67,7 +67,7 @@ define([
 ], function(qlik, $, cssContent) {
   'use strict';
 
-  var VERSION = '1.3.5';
+  var VERSION = '1.3.6';
   var LOG = '[CEB v' + VERSION + ']';
   function log()  { var a = Array.prototype.slice.call(arguments); console.log.apply(console,  [LOG].concat(a)); }
   function warn() { var a = Array.prototype.slice.call(arguments); console.warn.apply(console, [LOG].concat(a)); }
@@ -627,13 +627,19 @@ define([
       totalCount++; // track every string cell usage for SST count attribute
       return map[s];
     }
+    // Strict numeric regex — must match buildSheetBytes cell writer exactly
+    var STRICT_NUM_RE = /^-?\d+(\.\d+)?([eE][+-]?\d+)?$/;
     headers.forEach(function(h) { intern(h); });
     for (var i = 0; i < rows.length; i++) {
       var row = rows[i];
       for (var c = 0; c < row.length; c++) {
-        var val = row[c], num = parseFloat(val);
-        if (val === '' || isNaN(num) || !isFinite(num)) { intern(val); }
-        // numeric cells don't go into SST — no totalCount increment needed
+        var val = row[c];
+        var sval = (val !== null && val !== undefined) ? String(val).trim() : '';
+        var num  = parseFloat(sval);
+        // Use same strict regex as cell writer — only pure numbers skip SST
+        var isStrictNum = (sval !== '' && STRICT_NUM_RE.test(sval) && isFinite(num));
+        if (!isStrictNum) { intern(val); }
+        // pure numeric cells don't go into SST — no totalCount increment
       }
     }
     return { strings: strings, index: map, totalCount: totalCount };
@@ -694,10 +700,8 @@ define([
         var val  = row[c];
         var cref = cols[c] + rowNum;
         var num  = parseFloat(val);
-        // Strict numeric check: ONLY write as number if the ENTIRE string is numeric.
-        // parseFloat('25/Feb/2014')=25, parseFloat('24B-0014-14')=24, parseFloat('+971...')=971...
-        // All of these would be wrongly treated as numbers without a strict regex check.
-        // Regex: optional sign, digits, optional decimal digits, optional exponent — nothing else.
+        // Strict numeric check — must match buildSST exactly.
+        // Uses same regex: pure numbers only. Mixed strings (dates, refs, phones) → string cells.
         var isStrictNum = (val !== '' && val !== null && val !== undefined &&
                            /^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(String(val).trim()) &&
                            isFinite(num));

@@ -358,3 +358,28 @@ go to the string cell path and are preserved exactly as in Qlik.
 
 Values correctly numeric: `-2485`, `10`, `0.43`, `9.14` → number cells ✓
 Values correctly string: `24B-0014-14`, `25/Feb/2014`, `+971...` → string cells ✓
+
+---
+
+## v1.3.6 — Fix undefined values caused by SST/cell writer mismatch
+
+### Problem
+v1.3.5 introduced a strict numeric regex in the cell writer but forgot
+to apply the same regex in buildSST. This caused a mismatch:
+
+- buildSST (old loose check): `parseFloat("24B-0014-14")=24` → numeric → NOT interned
+- buildSheetBytes (new strict check): `"24B-0014-14"` fails regex → goes to SST path
+- SST lookup: `sstIndex["24B-0014-14"]` = `undefined` → cell shows `undefined`
+
+Affected columns: ApplicationRefNo, ServiceName, App Date, End Date,
+Khidmati Code, Mobile — all values that parseFloat() partially parses.
+
+### Fix
+Applied the same strict regex in buildSST:
+```javascript
+var STRICT_NUM_RE = /^-?\d+(\.\d+)?([eE][+-]?\d+)?$/;
+var isStrictNum = (sval !== '' && STRICT_NUM_RE.test(sval) && isFinite(num));
+if (!isStrictNum) { intern(val); }  // goes into SST
+```
+Both buildSST and buildSheetBytes now use identical logic — a value
+is numeric if and only if the strict regex matches. No more mismatches.
