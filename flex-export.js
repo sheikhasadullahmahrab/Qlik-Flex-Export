@@ -67,7 +67,7 @@ define([
 ], function(qlik, $, cssContent) {
   'use strict';
 
-  var VERSION = '1.3.1';
+  var VERSION = '1.3.2';
   var LOG = '[CEB v' + VERSION + ']';
   function log()  { var a = Array.prototype.slice.call(arguments); console.log.apply(console,  [LOG].concat(a)); }
   function warn() { var a = Array.prototype.slice.call(arguments); console.warn.apply(console, [LOG].concat(a)); }
@@ -326,7 +326,38 @@ define([
         // STEP 3: Session HC
         var sessionDims = [], sessionMeas = [];
         if (hcNow && hcNow.qDimensions && hcNow.qDimensions.length) {
-          hcNow.qDimensions.forEach(function(d) { sessionDims.push({ qDef: d.qDef, qNullSuppression: false }); });
+          hcNow.qDimensions.forEach(function(d, di) {
+            // Copy full qDef (includes qNumberPresentation if user set format expression)
+            var dimDef = { qDef: d.qDef, qNullSuppression: false };
+
+            // Also carry qNumberPresentation from qDef if present
+            // This is what makes =Date(SubmitDate,'DD/MMM/YYYY') render correctly in qText
+            if (d.qDef && d.qDef.qNumberPresentation) {
+              dimDef.qDef = JSON.parse(JSON.stringify(d.qDef)); // deep copy
+            }
+
+            // Fallback: read number format from qDimensionInfo (engine's resolved format)
+            // qDimensionInfo[di].qNumInfo tells us the number type and format string
+            var dimInfo = dimsNow[di];
+            if (dimInfo && dimInfo.qNumInfo && dimInfo.qNumInfo.qType !== 'U' && dimInfo.qNumInfo.qType !== 'A') {
+              // Map qNumInfo to qNumberPresentation format that the engine understands
+              if (!dimDef.qDef.qNumberPresentation) {
+                dimDef.qDef = JSON.parse(JSON.stringify(d.qDef)); // deep copy if not already
+                dimDef.qDef.qNumberPresentation = {
+                  qType: dimInfo.qNumInfo.qType,
+                  qnDec: dimInfo.qNumInfo.qnDec || 0,
+                  qUseThou: dimInfo.qNumInfo.qUseThou || 0,
+                  qFmt: dimInfo.qNumInfo.qFmt || '',
+                  qDec: dimInfo.qNumInfo.qDec || '.',
+                  qThou: dimInfo.qNumInfo.qThou || ','
+                };
+                log('STEP 3 dim[' + di + ']: injected qNumberPresentation type=' +
+                    dimInfo.qNumInfo.qType + ' fmt=' + (dimInfo.qNumInfo.qFmt || 'n/a'));
+              }
+            }
+
+            sessionDims.push(dimDef);
+          });
         } else {
           dimsNow.forEach(function(d) {
             var f = (d.qGroupFieldDefs && d.qGroupFieldDefs[0]) || d.qFallbackTitle || '';
@@ -334,7 +365,28 @@ define([
           });
         }
         if (hcNow && hcNow.qMeasures && hcNow.qMeasures.length) {
-          hcNow.qMeasures.forEach(function(m) { sessionMeas.push({ qDef: m.qDef }); });
+          hcNow.qMeasures.forEach(function(m, mi) {
+            // Copy full measure def including number presentation
+            var measDef = { qDef: m.qDef };
+
+            var measInfo = measNow[mi];
+            if (measInfo && measInfo.qNumInfo && measInfo.qNumInfo.qType !== 'U' && measInfo.qNumInfo.qType !== 'A') {
+              if (!measDef.qDef.qNumberPresentation) {
+                measDef.qDef = JSON.parse(JSON.stringify(m.qDef));
+                measDef.qDef.qNumberPresentation = {
+                  qType: measInfo.qNumInfo.qType,
+                  qnDec: measInfo.qNumInfo.qnDec || 0,
+                  qUseThou: measInfo.qNumInfo.qUseThou || 0,
+                  qFmt: measInfo.qNumInfo.qFmt || '',
+                  qDec: measInfo.qNumInfo.qDec || '.',
+                  qThou: measInfo.qNumInfo.qThou || ','
+                };
+                log('STEP 3 meas[' + mi + ']: injected qNumberPresentation type=' +
+                    measInfo.qNumInfo.qType + ' fmt=' + (measInfo.qNumInfo.qFmt || 'n/a'));
+              }
+            }
+            sessionMeas.push(measDef);
+          });
         }
 
         // STEP 4: Headers

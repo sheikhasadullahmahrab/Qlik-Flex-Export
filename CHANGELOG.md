@@ -231,3 +231,42 @@ tells Excel: "treat as plain text, do not convert or reformat."
 - Phone numbers keep leading zeros (e.g. "0501234567" not "501234567")
 - Reference codes, IDs, formatted strings all preserved exactly as in Qlik
 - Header row keeps style 1 (bold), numeric cells keep style 0 (default number)
+
+---
+
+## v1.3.2 — Format-aware export (dates, phone numbers, custom expressions)
+
+### Problem
+When a dimension is defined as a calculated expression with formatting —
+e.g. `=Date(SubmitDate, 'DD/MMM/YYYY')` — the exported file showed only
+the day number (e.g. "15") instead of the formatted date ("15/Jun/2025").
+
+### Root cause
+The session hypercube we create for export was not carrying the number
+format definition (`qNumberPresentation`) from the original hypercube.
+Qlik's engine returns dual values — a numeric part and a text part.
+`qText` is rendered according to `qNumberPresentation` in the hypercube
+definition. Without it the engine falls back to default rendering of
+the numeric part — for a date serial that's just the day number.
+
+### Fix
+When building session dimensions and measures:
+1. Copy `qDef.qNumberPresentation` if the user set it directly on the expression
+2. Fallback: read `qDimensionInfo[i].qNumInfo` (the engine's resolved format)
+   and inject it as `qNumberPresentation` into the session dim definition
+3. Same logic applied to measures
+
+This means `qText` from `getHyperCubeData` now matches exactly what Qlik
+renders in a table object — formatted dates, currency, percentages, custom
+number formats all preserved.
+
+### What this covers
+- `=Date(field, 'DD/MMM/YYYY')` → exports "15/Jun/2025" not "15"
+- `=Num(field, '#,##0.00')` → exports "1,234.56" not "1234.56"  
+- `=Money(field)` → exports "AED 1,234.56" not "1234.56"
+- Phone number fields with leading zeros → preserved via text style (s=2)
+- Any dimension/measure with a custom number format expression
+
+### Console diagnostics
+When a format is injected you will see:
+`[CEB v1.3.2] STEP 3 dim[0]: injected qNumberPresentation type=D fmt=DD/MMM/YYYY`
