@@ -203,3 +203,31 @@ Single file for ≤ 900K rows. ZIP filename uses date-time stamp only.
 | 1.1.0 | Parallel fetch — 150s vs 325s for 1M rows |
 | 1.2.0 | Raw XML XLSX + SST + fflate compression — 40-80MB vs 320MB |
 | 1.3.0 | paint() guard — progress bar visible throughout export |
+
+---
+
+## v1.3.1 — Cell formatting + Error 6001 fix
+
+### Fix 1 — Error 6001 "Page(s) too large" with many columns
+With 29 dimensions, each page response contains more JSON metadata per cell.
+Long string values (URLs, emails, names) further inflate response size.
+At 500 rows × 29 cols the WebSocket response exceeded Qlik's internal limit.
+
+Fix: Dynamic page size capped by column count at runtime:
+`safePageSize = min(userSetting, floor(10000 / colsNow))`
+- 29 cols → 344 rows/page
+- 21 cols → 476 rows/page
+- 5 cols  → 500 rows/page (user setting honoured)
+User's configured page size is still the ceiling — only reduced when needed.
+
+### Fix 2 — Date and phone number formatting not preserved in Excel
+Excel auto-converts string cells it recognises — "15/06/2025" becomes a date
+value, "0501234567" loses its leading zero, reference codes get reformatted.
+
+Fix: Added Excel built-in text format (numFmtId=49, the "@" format) as style
+index 2 in the XLSX styles.xml. All string data cells now use s="2" which
+tells Excel: "treat as plain text, do not convert or reformat."
+- Dates remain as-is (e.g. "15/06/2025" stays "15/06/2025")
+- Phone numbers keep leading zeros (e.g. "0501234567" not "501234567")
+- Reference codes, IDs, formatted strings all preserved exactly as in Qlik
+- Header row keeps style 1 (bold), numeric cells keep style 0 (default number)

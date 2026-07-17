@@ -67,7 +67,7 @@ define([
 ], function(qlik, $, cssContent) {
   'use strict';
 
-  var VERSION = '1.3.0';
+  var VERSION = '1.3.1';
   var LOG = '[CEB v' + VERSION + ']';
   function log()  { var a = Array.prototype.slice.call(arguments); console.log.apply(console,  [LOG].concat(a)); }
   function warn() { var a = Array.prototype.slice.call(arguments); console.warn.apply(console, [LOG].concat(a)); }
@@ -366,14 +366,23 @@ define([
             var sessionObj  = result.sessionObj;
             var rowsNow     = result.rowCount;
             var exportLimit = maxRows > 0 ? Math.min(maxRows, rowsNow) : rowsNow;
-            var totalPages  = Math.ceil(exportLimit / pageSize);
+            // Dynamic page size — error 6001 fires when JSON response is too large.
+            // Long strings (URLs, names, emails) with many columns inflate response size.
+            // Cap: floor(10000 / colsNow). At 29 cols → 344 rows, at 21 → 476, at 5 → 500.
+            var safePageSize = Math.min(pageSize, Math.max(10, Math.floor(10000 / colsNow)));
+            if (safePageSize < pageSize) {
+              log('STEP 6: page size auto-reduced ' + pageSize + ' → ' + safePageSize +
+                  ' rows (col safety: ' + colsNow + ' cols x ' + safePageSize + ' = ' +
+                  (colsNow * safePageSize) + ' cells/page)');
+            }
+            var totalPages  = Math.ceil(exportLimit / safePageSize);
 
-            log('STEP 6: exportLimit=' + exportLimit + ' totalPages=' + totalPages);
+            log('STEP 6: exportLimit=' + exportLimit + ' safePageSize=' + safePageSize + ' totalPages=' + totalPages);
             setProgress(5, 'Fetching ' + exportLimit.toLocaleString() + ' rows (' + totalPages + ' pages, ' + concurrency + ' parallel)...');
 
             var pageDescs = [];
-            for (var f = 0; f < exportLimit; f += pageSize) {
-              pageDescs.push({ idx: pageDescs.length, top: f, h: Math.min(pageSize, exportLimit - f) });
+            for (var f = 0; f < exportLimit; f += safePageSize) {
+              pageDescs.push({ idx: pageDescs.length, top: f, h: Math.min(safePageSize, exportLimit - f) });
             }
             var resultSlots = new Array(pageDescs.length);
             var fetchedRows = 0;
@@ -605,10 +614,13 @@ define([
         var cref = cols[c] + rowNum;
         var num  = parseFloat(val);
         if (val !== '' && !isNaN(num) && isFinite(num)) {
+          // Numeric: style 0 (default number format)
           rParts.push('<c r="' + cref + '"><v>' + num + '</v></c>');
         } else {
+          // String: style 2 (numFmtId=49, text @ format)
+          // Prevents Excel auto-converting dates, phone numbers, IDs with leading zeros
           var si = sstIndex[String(val !== undefined && val !== null ? val : '')];
-          rParts.push('<c r="' + cref + '" t="s"><v>' + si + '</v></c>');
+          rParts.push('<c r="' + cref + '" t="s" s="2"><v>' + si + '</v></c>');
         }
       }
       rParts.push('</row>');
@@ -664,15 +676,20 @@ define([
 
     var stylesXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
       '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
-      '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font>' +
-      '<font><b/><sz val="11"/><name val="Calibri"/></font></fonts>' +
-      '<fills count="2"><fill><patternFill patternType="none"/></fill>' +
-      '<fill><patternFill patternType="gray125"/></fill></fills>' +
+      '<fonts count="2">' +
+        '<font><sz val="11"/><name val="Calibri"/></font>' +
+        '<font><b/><sz val="11"/><name val="Calibri"/></font>' +
+      '</fonts>' +
+      '<fills count="2">' +
+        '<fill><patternFill patternType="none"/></fill>' +
+        '<fill><patternFill patternType="gray125"/></fill>' +
+      '</fills>' +
       '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
       '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
-      '<cellXfs count="2">' +
-        '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
-        '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0"/>' +
+      '<cellXfs count="3">' +
+        '<xf numFmtId="0"  fontId="0" fillId="0" borderId="0" xfId="0"/>' +
+        '<xf numFmtId="0"  fontId="1" fillId="0" borderId="0" xfId="0"/>' +
+        '<xf numFmtId="49" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>' +
       '</cellXfs></styleSheet>';
 
     var safeSheet = (sheetName || 'Sheet1').replace(/[\\\/\?\*\[\]]/g, '').substring(0, 31);
