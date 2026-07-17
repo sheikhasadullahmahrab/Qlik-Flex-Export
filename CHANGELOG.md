@@ -270,3 +270,42 @@ number formats all preserved.
 ### Console diagnostics
 When a format is injected you will see:
 `[CEB v1.3.2] STEP 3 dim[0]: injected qNumberPresentation type=D fmt=DD/MMM/YYYY`
+
+---
+
+## v1.3.3 — Format expression parser (dates, numbers, currency)
+
+### Root cause (confirmed by diagnostic)
+`hcNow.qDimensions` is `undefined` in Qlik Cloud — the layout does not
+expose the original dimension definitions. `qDimensionInfo[i].qNumInfo`
+is also `undefined`. So all previous attempts to inject `qNumberPresentation`
+from the layout were reading data that simply does not exist in Qlik Cloud.
+
+### What the diagnostic revealed
+- `qDimensions` array is always empty in Qlik Cloud layout
+- `qNumInfo` is always `undefined` on `qDimensionInfo` items
+- Session dims were being built with bare `qFieldDefs` only — no format info
+- The expression `=Date(SubmitDate, 'DD/MMM/YYYY')` WAS being passed correctly
+  but without `qNumberPresentation`, the engine returned the numeric serial
+  as `qText` instead of the formatted date string
+
+### Fix — expression format parser
+Since we cannot get format metadata from the layout in Qlik Cloud, we now
+parse the expression string itself to detect Qlik format functions:
+
+| Expression pattern | qType injected |
+|---|---|
+| `=Date(field, 'fmt')` | `D` |
+| `=Time(field, 'fmt')` | `T` |
+| `=Timestamp(field, 'fmt')` | `TS` |
+| `=Num(field, 'fmt')` | `F` |
+| `=Money(field, 'fmt')` | `M` |
+| `=Interval(field, 'fmt')` | `IV` |
+| `=Dual(...)` | `F` |
+
+The format string is extracted from the second argument (e.g. `'DD/MMM/YYYY'`)
+and injected as `qNumberPresentation` on the session dimension `qDef`.
+The Qlik engine then uses this to format `qText` correctly.
+
+### Also fixed
+- `obj is not defined` crash in diagnostic code (was `obj`, should be `sessionObj`)

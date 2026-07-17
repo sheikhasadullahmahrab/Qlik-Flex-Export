@@ -67,7 +67,7 @@ define([
 ], function(qlik, $, cssContent) {
   'use strict';
 
-  var VERSION = '1.3.2';
+  var VERSION = '1.3.3';
   var LOG = '[CEB v' + VERSION + ']';
   function log()  { var a = Array.prototype.slice.call(arguments); console.log.apply(console,  [LOG].concat(a)); }
   function warn() { var a = Array.prototype.slice.call(arguments); console.warn.apply(console, [LOG].concat(a)); }
@@ -325,69 +325,103 @@ define([
 
         // STEP 3: Session HC
         var sessionDims = [], sessionMeas = [];
-        if (hcNow && hcNow.qDimensions && hcNow.qDimensions.length) {
-          hcNow.qDimensions.forEach(function(d, di) {
-            // Copy full qDef (includes qNumberPresentation if user set format expression)
-            var dimDef = { qDef: d.qDef, qNullSuppression: false };
+        /*
+         * extractFmtFromExpr(expr)
+         * ─────────────────────────
+         * Parses Qlik format expressions to extract qNumberPresentation.
+         * In Qlik Cloud, qDimensions and qNumInfo are not available in the layout,
+         * so we cannot get format metadata from the engine. Instead we parse the
+         * expression string directly.
+         *
+         * Supported patterns:
+         *   =Date(field, 'fmt')      → { qType: 'D', qFmt: 'fmt' }
+         *   =Time(field, 'fmt')      → { qType: 'T', qFmt: 'fmt' }
+         *   =Timestamp(field, 'fmt') → { qType: 'TS', qFmt: 'fmt' }
+         *   =Num(field, 'fmt')       → { qType: 'F', qFmt: 'fmt' }
+         *   =Money(field, 'fmt')     → { qType: 'M', qFmt: 'fmt' }
+         *   =Interval(field, 'fmt')  → { qType: 'IV', qFmt: 'fmt' }
+         */
+        function extractFmtFromExpr(expr) {
+          if (!expr || typeof expr !== 'string') return null;
+          var s = expr.trim();
 
-            // Also carry qNumberPresentation from qDef if present
-            // This is what makes =Date(SubmitDate,'DD/MMM/YYYY') render correctly in qText
-            if (d.qDef && d.qDef.qNumberPresentation) {
-              dimDef.qDef = JSON.parse(JSON.stringify(d.qDef)); // deep copy
-            }
+          // Map of Qlik format functions to qType
+          var fnMap = [
+            { re: /^=?Date\s*\(/i,      qType: 'D'  },
+            { re: /^=?Time\s*\(/i,      qType: 'T'  },
+            { re: /^=?Timestamp\s*\(/i, qType: 'TS' },
+            { re: /^=?Num\s*\(/i,       qType: 'F'  },
+            { re: /^=?Money\s*\(/i,     qType: 'M'  },
+            { re: /^=?Interval\s*\(/i,  qType: 'IV' },
+            { re: /^=?Dual\s*\(/i,      qType: 'F'  }
+          ];
 
-            // Fallback: read number format from qDimensionInfo (engine's resolved format)
-            // qDimensionInfo[di].qNumInfo tells us the number type and format string
-            var dimInfo = dimsNow[di];
-            if (dimInfo && dimInfo.qNumInfo && dimInfo.qNumInfo.qType !== 'U' && dimInfo.qNumInfo.qType !== 'A') {
-              // Map qNumInfo to qNumberPresentation format that the engine understands
-              if (!dimDef.qDef.qNumberPresentation) {
-                dimDef.qDef = JSON.parse(JSON.stringify(d.qDef)); // deep copy if not already
-                dimDef.qDef.qNumberPresentation = {
-                  qType: dimInfo.qNumInfo.qType,
-                  qnDec: dimInfo.qNumInfo.qnDec || 0,
-                  qUseThou: dimInfo.qNumInfo.qUseThou || 0,
-                  qFmt: dimInfo.qNumInfo.qFmt || '',
-                  qDec: dimInfo.qNumInfo.qDec || '.',
-                  qThou: dimInfo.qNumInfo.qThou || ','
-                };
-                log('STEP 3 dim[' + di + ']: injected qNumberPresentation type=' +
-                    dimInfo.qNumInfo.qType + ' fmt=' + (dimInfo.qNumInfo.qFmt || 'n/a'));
-              }
-            }
+          var matchedType = null;
+          for (var fi = 0; fi < fnMap.length; fi++) {
+            if (fnMap[fi].re.test(s)) { matchedType = fnMap[fi].qType; break; }
+          }
+          if (!matchedType) return null;
 
-            sessionDims.push(dimDef);
-          });
-        } else {
-          dimsNow.forEach(function(d) {
-            var f = (d.qGroupFieldDefs && d.qGroupFieldDefs[0]) || d.qFallbackTitle || '';
-            sessionDims.push({ qDef: { qFieldDefs: [f], qFieldLabels: [''] } });
-          });
+          // Extract format string — second argument in quotes, e.g. 'DD/MMM/YYYY'
+          // Handles both single and double quotes
+          var fmtMatch = s.match(/,\s*['"]([^'"]+)['"]/);
+          if (!fmtMatch) {
+            // No explicit format argument — return type only, engine uses field default
+            return { qType: matchedType, qFmt: '' };
+          }
+          return { qType: matchedType, qFmt: fmtMatch[1] };
         }
+
+        function buildDimDef(fieldExpr) {
+          var def = { qFieldDefs: [fieldExpr], qFieldLabels: [''] };
+          var fmt = extractFmtFromExpr(fieldExpr);
+          if (fmt) {
+            def.qNumberPresentation = {
+              qType:     fmt.qType,
+              qFmt:      fmt.qFmt,
+              qnDec:     0,
+              qUseThou:  0,
+              qDec:      '.',
+              qThou:     ','
+            };
+            log('STEP 3: format detected in expr "' + fieldExpr.substring(0, 40) +
+                '" → type=' + fmt.qType + ' fmt=' + fmt.qFmt);
+          }
+          return def;
+        }
+
+        // Build session dims — qDimensions not available in Qlik Cloud layout,
+        // so we always use qDimensionInfo (fallbackTitle / groupFieldDefs)
+        // and parse expressions for number format
+        dimsNow.forEach(function(d, di) {
+          var fieldExpr = (d.qGroupFieldDefs && d.qGroupFieldDefs[0]) || d.qFallbackTitle || '';
+          sessionDims.push({ qDef: buildDimDef(fieldExpr), qNullSuppression: false });
+        });
+
+        // Build session measures
         if (hcNow && hcNow.qMeasures && hcNow.qMeasures.length) {
           hcNow.qMeasures.forEach(function(m, mi) {
-            // Copy full measure def including number presentation
-            var measDef = { qDef: m.qDef };
-
-            var measInfo = measNow[mi];
-            if (measInfo && measInfo.qNumInfo && measInfo.qNumInfo.qType !== 'U' && measInfo.qNumInfo.qType !== 'A') {
-              if (!measDef.qDef.qNumberPresentation) {
-                measDef.qDef = JSON.parse(JSON.stringify(m.qDef));
-                measDef.qDef.qNumberPresentation = {
-                  qType: measInfo.qNumInfo.qType,
-                  qnDec: measInfo.qNumInfo.qnDec || 0,
-                  qUseThou: measInfo.qNumInfo.qUseThou || 0,
-                  qFmt: measInfo.qNumInfo.qFmt || '',
-                  qDec: measInfo.qNumInfo.qDec || '.',
-                  qThou: measInfo.qNumInfo.qThou || ','
-                };
-                log('STEP 3 meas[' + mi + ']: injected qNumberPresentation type=' +
-                    measInfo.qNumInfo.qType + ' fmt=' + (measInfo.qNumInfo.qFmt || 'n/a'));
-              }
+            var measExpr = (m.qDef && m.qDef.qDef) || '';
+            var measDef  = { qDef: measExpr };
+            var fmt      = extractFmtFromExpr(measExpr);
+            if (fmt) {
+              measDef.qNumberPresentation = {
+                qType: fmt.qType, qFmt: fmt.qFmt,
+                qnDec: 0, qUseThou: 0, qDec: '.', qThou: ','
+              };
+              log('STEP 3: measure format detected "' + measExpr.substring(0,40) +
+                  '" → type=' + fmt.qType + ' fmt=' + fmt.qFmt);
             }
-            sessionMeas.push(measDef);
+            sessionMeas.push({ qDef: m.qDef });
           });
         }
+
+        // STEP 3 DIAGNOSTICS
+        log('STEP 3 DIAG: qDimensions available=' + !!(hcNow && hcNow.qDimensions && hcNow.qDimensions.length));
+        log('STEP 3 DIAG: === sessionDims built ===');
+        sessionDims.forEach(function(d, i) {
+          log('STEP 3 DIAG sessionDim['+i+'] qDef=' + JSON.stringify(d.qDef));
+        });
 
         // STEP 4: Headers
         var headers = [];
@@ -411,7 +445,20 @@ define([
             return sessionObj.getLayout().then(function(sl) {
               var rc = sl.qHyperCube.qSize.qcy;
               log('STEP 5: rowCount=' + rc);
-              return { sessionObj: sessionObj, rowCount: rc };
+              // DIAG: log first row raw cell data from session object
+            log('STEP 5 DIAG: rowCount=' + rc + ' — fetching 1 diagnostic row...');
+            sessionObj.getHyperCubeData('/qHyperCubeDef', [{qLeft:0, qTop:0, qWidth:colsNow, qHeight:1}])
+              .then(function(diagData) {
+                if (diagData && diagData[0] && diagData[0].qMatrix && diagData[0].qMatrix[0]) {
+                  diagData[0].qMatrix[0].forEach(function(cell, ci) {
+                    log('STEP 5 DIAG cell['+ci+'] qText=' + JSON.stringify(cell.qText) +
+                        ' qNum=' + cell.qNum +
+                        ' qType=' + cell.qType +
+                        ' qIsNull=' + cell.qIsNull);
+                  });
+                }
+              }).catch(function(e) { log('STEP 5 DIAG fetch failed: ' + e.message); });
+            return { sessionObj: sessionObj, rowCount: rc };
             });
           })
           .then(function(result) {
