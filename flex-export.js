@@ -67,7 +67,7 @@ define([
 ], function(qlik, $, cssContent) {
   'use strict';
 
-  var VERSION = '1.3.9';
+  var VERSION = '1.4.0';
   var LOG = '[CEB v' + VERSION + ']';
   function log()  { var a = Array.prototype.slice.call(arguments); console.log.apply(console,  [LOG].concat(a)); }
   function warn() { var a = Array.prototype.slice.call(arguments); console.warn.apply(console, [LOG].concat(a)); }
@@ -399,12 +399,14 @@ define([
         // Step A: read persistent object layout to get qNullSuppression per dim
         app.getObject(layout.qInfo.qId)
           .then(function(persObj) {
-            return persObj.getLayout();
+            // getProperties() returns raw object definition with qDimensions[i].qNullSuppression
+            // getLayout() returns rendered layout where qDimensions is empty in Qlik Cloud
+            return persObj.getProperties();
           })
-          .then(function(persLayout) {
-            // persLayout.qHyperCube.qDimensions has qNullSuppression per dim
-            var persistentDimSettings = (persLayout.qHyperCube && persLayout.qHyperCube.qDimensions) || [];
-            log('STEP 3: persistent qDimensions=' + persistentDimSettings.length);
+          .then(function(persProps) {
+            var hcDef = persProps.qHyperCubeDef || persProps.qHyperCube || {};
+            var persistentDimSettings = hcDef.qDimensions || [];
+            log('STEP 3: getProperties qDimensions=' + persistentDimSettings.length);
 
             // Step B: build session dims/meas now that we have persistentDimSettings
             sessionDims = buildSessionDims(persistentDimSettings);

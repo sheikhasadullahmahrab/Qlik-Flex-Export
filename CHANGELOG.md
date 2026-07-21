@@ -460,3 +460,39 @@ app.getObject(layout.qInfo.qId)   // Step A: read persistent layout
 
 No `persistentLayoutPromise` variable at all — just `.then()` chaining.
 Execution order is guaranteed by the chain, not by variable timing.
+
+---
+
+## v1.4.0 — Include null values checkbox fully working
+
+### Root cause (final, confirmed by diagnostic)
+All previous attempts read `qDimensions` from the wrong API:
+- `getLayout()` returns the rendered/calculated layout where `qDimensions` is empty in Qlik Cloud
+- `getProperties()` returns the raw saved object definition where `qDimensions[i].qNullSuppression` lives
+
+### Fix
+Changed `persObj.getLayout()` to `persObj.getProperties()` and read from `qHyperCubeDef.qDimensions`.
+
+### Confirmed working by live diagnostic
+```
+STEP 3: getProperties qDimensions=29         ← 29 dims read correctly
+STEP 3: dim[0] qNullSuppression=true         ← unchecked dim detected
+STEP 5: rowCount=47788                        ← was 47922, 134 null rows excluded
+```
+Unchecking "Include null values" on CFSRefNo excluded exactly 134 null rows.
+
+### Version history summary
+| Version | Key change |
+|---|---|
+| 1.0.0 | Working baseline — session objects, sequential fetch |
+| 1.1.0 | Parallel fetch — 6× concurrency |
+| 1.2.0 | Raw XML XLSX + SST + fflate compression |
+| 1.3.0 | paint() guard — progress bar persistent |
+| 1.3.1 | Error 6001 fix + text format preservation |
+| 1.3.2 | Format expression parser (dates, currency) |
+| 1.3.3 | getProperties() for format — dates work correctly |
+| 1.3.4 | Diagnostic logging removed — stable build |
+| 1.3.5 | Strict numeric regex — no truncation of ref codes, dates, phones |
+| 1.3.6 | SST/cell writer sync — no more undefined values |
+| 1.3.7–1.3.9 | qNullSuppression read attempts (timing bugs) |
+| 1.4.0 | getProperties() for qNullSuppression — null exclusion works |

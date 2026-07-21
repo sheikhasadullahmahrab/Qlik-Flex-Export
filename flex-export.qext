@@ -1,9 +1,9 @@
 {
-  "name": "FlexExport v1.3.9",
+  "name": "FlexExport v1.4.0",
   "description": "Configurable export button for Qlik Sense. Add unlimited dimensions and measures, rename column headers, and export to Excel or CSV. Handles 1M+ row datasets with compressed XLSX output via raw XML and fflate ZIP.",
   "icon": "download",
   "type": "visualization",
-  "version": "1.3.9",
+  "version": "1.4.0",
   "author": "Sheikh Asadullah Mahrab",
   "email": "sheikhasadullahmahrab@gmail.com",
   "keywords": "qlik-sense, visualization-extension, export, excel, csv, flex-export",
