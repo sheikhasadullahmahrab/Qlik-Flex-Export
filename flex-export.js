@@ -67,7 +67,7 @@ define([
 ], function(qlik, $, cssContent) {
   'use strict';
 
-  var VERSION = '1.3.7';
+  var VERSION = '1.3.8';
   var LOG = '[CEB v' + VERSION + ']';
   function log()  { var a = Array.prototype.slice.call(arguments); console.log.apply(console,  [LOG].concat(a)); }
   function warn() { var a = Array.prototype.slice.call(arguments); console.warn.apply(console, [LOG].concat(a)); }
@@ -390,6 +390,8 @@ define([
           return def;
         }
 
+        persistentLayoutPromise.then(function() {
+
         // Build session dims — qDimensions not available in Qlik Cloud layout,
         // so we always use qDimensionInfo (fallbackTitle / groupFieldDefs)
         // and parse expressions for number format
@@ -455,8 +457,6 @@ define([
           .catch(function(e) {
             warn('STEP 3: could not read persistent layout: ' + e.message + ' — nulls included for all dims');
           });
-
-        persistentLayoutPromise.then(function() {
 
         getEngineApp(app)
           .then(function(eApp) {

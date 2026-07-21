@@ -406,3 +406,21 @@ The session dim definition now carries the correct `qNullSuppression` value:
 
 Console log when nulls are suppressed:
 `STEP 3: dim[2] qNullSuppression=true (nulls suppressed)`
+
+---
+
+## v1.3.8 — Fix async timing of qNullSuppression read
+
+### Problem
+v1.3.7 introduced reading qNullSuppression from the persistent object layout
+but the session dim builder ran BEFORE the promise resolved — causing
+`Cannot read properties of undefined (reading '0')` because
+`persistentDimSettings` was still an empty array when accessed.
+
+### Fix
+Moved the session dim/measure builder block INSIDE `persistentLayoutPromise.then()`
+so it only executes after `persistentDimSettings` has been populated.
+The execution order is now guaranteed:
+1. `app.getObject().getLayout()` resolves → `persistentDimSettings` populated
+2. Session dim builder runs → reads `persistentDimSettings[di].qNullSuppression`
+3. `getEngineApp(app)` → session object creation → fetch → export
