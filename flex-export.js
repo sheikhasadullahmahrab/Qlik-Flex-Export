@@ -67,7 +67,7 @@ define([
 ], function(qlik, $, cssContent) {
   'use strict';
 
-  var VERSION = '1.3.6';
+  var VERSION = '1.3.7';
   var LOG = '[CEB v' + VERSION + ']';
   function log()  { var a = Array.prototype.slice.call(arguments); console.log.apply(console,  [LOG].concat(a)); }
   function warn() { var a = Array.prototype.slice.call(arguments); console.warn.apply(console, [LOG].concat(a)); }
@@ -395,7 +395,12 @@ define([
         // and parse expressions for number format
         dimsNow.forEach(function(d, di) {
           var fieldExpr = (d.qGroupFieldDefs && d.qGroupFieldDefs[0]) || d.qFallbackTitle || '';
-          sessionDims.push({ qDef: buildDimDef(fieldExpr), qNullSuppression: false });
+
+          // qNullSuppression comes from persistentDimSettings[di] read below
+          // via app.getObject(layout.qInfo.qId).getLayout() before session object creation
+          var nullSuppression = (persistentDimSettings[di] && persistentDimSettings[di].qNullSuppression === true);
+
+          sessionDims.push({ qDef: buildDimDef(fieldExpr), qNullSuppression: nullSuppression });
         });
 
         // Build session measures
@@ -426,6 +431,32 @@ define([
         log('STEP 4: headers=' + JSON.stringify(headers));
 
         setProgress(3, 'Connecting to engine...');
+
+        // Read qNullSuppression from the persistent object's full layout.
+        // qDimensionInfo does not carry qNullSuppression in Qlik Cloud.
+        // The persistent object (layout.qInfo.qId) has qDimensions with qNullSuppression.
+        // We read this ONCE before creating the session object.
+        var persistentDimSettings = [];
+        var persistentLayoutPromise = app.getObject(layout.qInfo.qId)
+          .then(function(persObj) {
+            return persObj.getLayout().then(function(persLayout) {
+              if (persLayout.qHyperCube && persLayout.qHyperCube.qDimensions) {
+                persistentDimSettings = persLayout.qHyperCube.qDimensions;
+                persistentDimSettings.forEach(function(d, i) {
+                  if (d.qNullSuppression) {
+                    log('STEP 3: dim[' + i + '] qNullSuppression=true (nulls suppressed)');
+                  }
+                });
+              } else {
+                log('STEP 3: persistent qDimensions not available — nulls included for all dims');
+              }
+            });
+          })
+          .catch(function(e) {
+            warn('STEP 3: could not read persistent layout: ' + e.message + ' — nulls included for all dims');
+          });
+
+        persistentLayoutPromise.then(function() {
 
         getEngineApp(app)
           .then(function(eApp) {
@@ -604,6 +635,8 @@ define([
             setError('Export failed: ' + (e && e.message ? e.message : 'Unknown') + ' — see F12 console');
             alert('Export failed:\n' + (e && e.message ? e.message : String(e)));
           });
+
+        }); // end persistentLayoutPromise.then()
 
         }, 50); // end setTimeout — allows browser to paint progress bar before export starts
       });

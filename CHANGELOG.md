@@ -383,3 +383,26 @@ if (!isStrictNum) { intern(val); }  // goes into SST
 ```
 Both buildSST and buildSheetBytes now use identical logic — a value
 is numeric if and only if the strict regex matches. No more mismatches.
+
+---
+
+## v1.3.7 — Include null values checkbox now works
+
+### Root cause
+`qNullSuppression` is not available on `qDimensionInfo` in Qlik Cloud —
+all dims showed `raw: undefined` in the diagnostic. The session object
+was always built with `qNullSuppression: false` (include nulls) regardless
+of the checkbox state.
+
+### Fix
+Before creating the session object, we now read the persistent extension
+object's full layout via `app.getObject(layout.qInfo.qId).getLayout()`.
+This returns `qHyperCube.qDimensions` with `qNullSuppression` per dim —
+the actual user setting from the properties panel checkbox.
+
+The session dim definition now carries the correct `qNullSuppression` value:
+- Checked "Include null values" → `qNullSuppression: false` (nulls included)
+- Unchecked "Include null values" → `qNullSuppression: true` (nulls excluded)
+
+Console log when nulls are suppressed:
+`STEP 3: dim[2] qNullSuppression=true (nulls suppressed)`
