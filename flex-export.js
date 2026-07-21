@@ -67,7 +67,7 @@ define([
 ], function(qlik, $, cssContent) {
   'use strict';
 
-  var VERSION = '1.3.8';
+  var VERSION = '1.3.9';
   var LOG = '[CEB v' + VERSION + ']';
   function log()  { var a = Array.prototype.slice.call(arguments); console.log.apply(console,  [LOG].concat(a)); }
   function warn() { var a = Array.prototype.slice.call(arguments); console.warn.apply(console, [LOG].concat(a)); }
@@ -323,29 +323,15 @@ define([
         log('STEP 2: dims=' + dimsNow.length + ' meas=' + measNow.length + ' cols=' + colsNow);
         if (colsNow === 0) { $element.data('ceb-exporting', false); setError('No columns defined.'); alert('Add at least one dimension or measure.'); return; }
 
-        // STEP 3: Session HC
+        // STEP 3 + 4 + engine: read persistent layout first (for qNullSuppression),
+        // then build session dims, then create session object and fetch.
+        // All chained so execution order is guaranteed.
+
         var sessionDims = [], sessionMeas = [];
-        /*
-         * extractFmtFromExpr(expr)
-         * ─────────────────────────
-         * Parses Qlik format expressions to extract qNumberPresentation.
-         * In Qlik Cloud, qDimensions and qNumInfo are not available in the layout,
-         * so we cannot get format metadata from the engine. Instead we parse the
-         * expression string directly.
-         *
-         * Supported patterns:
-         *   =Date(field, 'fmt')      → { qType: 'D', qFmt: 'fmt' }
-         *   =Time(field, 'fmt')      → { qType: 'T', qFmt: 'fmt' }
-         *   =Timestamp(field, 'fmt') → { qType: 'TS', qFmt: 'fmt' }
-         *   =Num(field, 'fmt')       → { qType: 'F', qFmt: 'fmt' }
-         *   =Money(field, 'fmt')     → { qType: 'M', qFmt: 'fmt' }
-         *   =Interval(field, 'fmt')  → { qType: 'IV', qFmt: 'fmt' }
-         */
+
         function extractFmtFromExpr(expr) {
           if (!expr || typeof expr !== 'string') return null;
           var s = expr.trim();
-
-          // Map of Qlik format functions to qType
           var fnMap = [
             { re: /^=?Date\s*\(/i,      qType: 'D'  },
             { re: /^=?Time\s*\(/i,      qType: 'T'  },
@@ -355,21 +341,12 @@ define([
             { re: /^=?Interval\s*\(/i,  qType: 'IV' },
             { re: /^=?Dual\s*\(/i,      qType: 'F'  }
           ];
-
           var matchedType = null;
           for (var fi = 0; fi < fnMap.length; fi++) {
             if (fnMap[fi].re.test(s)) { matchedType = fnMap[fi].qType; break; }
           }
           if (!matchedType) return null;
-
-          // Extract format string — second argument in quotes, e.g. 'DD/MMM/YYYY'
-          // Handles both single and double quotes
-          var fmtMatch = s.match(/,\s*['"]([^'"]+)['"]/);
-          if (!fmtMatch) {
-            // No explicit format argument — return type only, engine uses field default
-            return { qType: matchedType, qFmt: '' };
-          }
-          return { qType: matchedType, qFmt: fmtMatch[1] };
+          var fmtMatch = s.match(/,\s*['"]([^'"]+)['"]/);          return { qType: matchedType, qFmt: fmtMatch ? fmtMatch[1] : '' };
         }
 
         function buildDimDef(fieldExpr) {
@@ -377,53 +354,38 @@ define([
           var fmt = extractFmtFromExpr(fieldExpr);
           if (fmt) {
             def.qNumberPresentation = {
-              qType:     fmt.qType,
-              qFmt:      fmt.qFmt,
-              qnDec:     0,
-              qUseThou:  0,
-              qDec:      '.',
-              qThou:     ','
+              qType: fmt.qType, qFmt: fmt.qFmt,
+              qnDec: 0, qUseThou: 0, qDec: '.', qThou: ','
             };
-            log('STEP 3: format detected in expr "' + fieldExpr.substring(0, 40) +
+            log('STEP 3: format in expr "' + fieldExpr.substring(0,40) +
                 '" → type=' + fmt.qType + ' fmt=' + fmt.qFmt);
           }
           return def;
         }
 
-        persistentLayoutPromise.then(function() {
-
-        // Build session dims — qDimensions not available in Qlik Cloud layout,
-        // so we always use qDimensionInfo (fallbackTitle / groupFieldDefs)
-        // and parse expressions for number format
-        dimsNow.forEach(function(d, di) {
-          var fieldExpr = (d.qGroupFieldDefs && d.qGroupFieldDefs[0]) || d.qFallbackTitle || '';
-
-          // qNullSuppression comes from persistentDimSettings[di] read below
-          // via app.getObject(layout.qInfo.qId).getLayout() before session object creation
-          var nullSuppression = (persistentDimSettings[di] && persistentDimSettings[di].qNullSuppression === true);
-
-          sessionDims.push({ qDef: buildDimDef(fieldExpr), qNullSuppression: nullSuppression });
-        });
-
-        // Build session measures
-        if (hcNow && hcNow.qMeasures && hcNow.qMeasures.length) {
-          hcNow.qMeasures.forEach(function(m, mi) {
-            var measExpr = (m.qDef && m.qDef.qDef) || '';
-            var measDef  = { qDef: measExpr };
-            var fmt      = extractFmtFromExpr(measExpr);
-            if (fmt) {
-              measDef.qNumberPresentation = {
-                qType: fmt.qType, qFmt: fmt.qFmt,
-                qnDec: 0, qUseThou: 0, qDec: '.', qThou: ','
-              };
-              log('STEP 3: measure format detected "' + measExpr.substring(0,40) +
-                  '" → type=' + fmt.qType + ' fmt=' + fmt.qFmt);
+        function buildSessionDims(persistentDimSettings) {
+          var dims = [];
+          dimsNow.forEach(function(d, di) {
+            var fieldExpr = (d.qGroupFieldDefs && d.qGroupFieldDefs[0]) || d.qFallbackTitle || '';
+            var nullSuppression = !!(persistentDimSettings[di] &&
+                                     persistentDimSettings[di].qNullSuppression === true);
+            if (nullSuppression) {
+              log('STEP 3: dim[' + di + '] qNullSuppression=true (nulls suppressed)');
             }
-            sessionMeas.push({ qDef: m.qDef });
+            dims.push({ qDef: buildDimDef(fieldExpr), qNullSuppression: nullSuppression });
           });
+          return dims;
         }
 
-        log('STEP 3: ' + sessionDims.length + ' dims, ' + sessionMeas.length + ' measures built');
+        function buildSessionMeas() {
+          var meas = [];
+          if (hcNow && hcNow.qMeasures && hcNow.qMeasures.length) {
+            hcNow.qMeasures.forEach(function(m) {
+              meas.push({ qDef: m.qDef });
+            });
+          }
+          return meas;
+        }
 
         // STEP 4: Headers
         var headers = [];
@@ -434,31 +396,31 @@ define([
 
         setProgress(3, 'Connecting to engine...');
 
-        // Read qNullSuppression from the persistent object's full layout.
-        // qDimensionInfo does not carry qNullSuppression in Qlik Cloud.
-        // The persistent object (layout.qInfo.qId) has qDimensions with qNullSuppression.
-        // We read this ONCE before creating the session object.
-        var persistentDimSettings = [];
-        var persistentLayoutPromise = app.getObject(layout.qInfo.qId)
+        // Step A: read persistent object layout to get qNullSuppression per dim
+        app.getObject(layout.qInfo.qId)
           .then(function(persObj) {
-            return persObj.getLayout().then(function(persLayout) {
-              if (persLayout.qHyperCube && persLayout.qHyperCube.qDimensions) {
-                persistentDimSettings = persLayout.qHyperCube.qDimensions;
-                persistentDimSettings.forEach(function(d, i) {
-                  if (d.qNullSuppression) {
-                    log('STEP 3: dim[' + i + '] qNullSuppression=true (nulls suppressed)');
-                  }
-                });
-              } else {
-                log('STEP 3: persistent qDimensions not available — nulls included for all dims');
-              }
-            });
+            return persObj.getLayout();
+          })
+          .then(function(persLayout) {
+            // persLayout.qHyperCube.qDimensions has qNullSuppression per dim
+            var persistentDimSettings = (persLayout.qHyperCube && persLayout.qHyperCube.qDimensions) || [];
+            log('STEP 3: persistent qDimensions=' + persistentDimSettings.length);
+
+            // Step B: build session dims/meas now that we have persistentDimSettings
+            sessionDims = buildSessionDims(persistentDimSettings);
+            sessionMeas = buildSessionMeas();
+            log('STEP 3: ' + sessionDims.length + ' dims, ' + sessionMeas.length + ' measures built');
+
+            // Step C: get engine handle
+            return getEngineApp(app);
           })
           .catch(function(e) {
-            warn('STEP 3: could not read persistent layout: ' + e.message + ' — nulls included for all dims');
-          });
-
-        getEngineApp(app)
+            // If persistent layout read fails, still proceed with nulls included
+            warn('STEP 3: persistent layout read failed: ' + e.message + ' — building dims without null suppression');
+            sessionDims = buildSessionDims([]);
+            sessionMeas = buildSessionMeas();
+            return getEngineApp(app);
+          })
           .then(function(eApp) {
             savedEApp = eApp;
             return eApp.createSessionObject({
@@ -478,17 +440,13 @@ define([
             var sessionObj  = result.sessionObj;
             var rowsNow     = result.rowCount;
             var exportLimit = maxRows > 0 ? Math.min(maxRows, rowsNow) : rowsNow;
-            // Dynamic page size — error 6001 fires when JSON response is too large.
-            // Long strings (URLs, names, emails) with many columns inflate response size.
-            // Cap: floor(10000 / colsNow). At 29 cols → 344 rows, at 21 → 476, at 5 → 500.
             var safePageSize = Math.min(pageSize, Math.max(10, Math.floor(10000 / colsNow)));
             if (safePageSize < pageSize) {
               log('STEP 6: page size auto-reduced ' + pageSize + ' → ' + safePageSize +
                   ' rows (col safety: ' + colsNow + ' cols x ' + safePageSize + ' = ' +
                   (colsNow * safePageSize) + ' cells/page)');
             }
-            var totalPages  = Math.ceil(exportLimit / safePageSize);
-
+            var totalPages = Math.ceil(exportLimit / safePageSize);
             log('STEP 6: exportLimit=' + exportLimit + ' safePageSize=' + safePageSize + ' totalPages=' + totalPages);
             setProgress(5, 'Fetching ' + exportLimit.toLocaleString() + ' rows (' + totalPages + ' pages, ' + concurrency + ' parallel)...');
 
@@ -549,81 +507,55 @@ define([
               return;
             }
 
-            // ── XLSX path ────────────────────────────────────────────────────
-            // If rows > SPLIT_THRESHOLD: split into ROWS_PER_FILE chunks,
-            // write each as a separate XLSX, bundle all into a ZIP download.
-            // If rows <= SPLIT_THRESHOLD: single XLSX download as before.
-
             var needsSplit = allRows.length > SPLIT_THRESHOLD;
             log('STEP 8: rows=' + allRows.length + ' needsSplit=' + needsSplit +
                 ' threshold=' + SPLIT_THRESHOLD + ' rowsPerFile=' + ROWS_PER_FILE);
 
             if (!needsSplit) {
-              // ── Single file ──────────────────────────────────────────────
               setProgress(76, 'Building Shared String Table...');
               var sst = buildSST(headers, allRows);
               log('STEP 8a: SST unique=' + sst.strings.length + ' total=' + sst.totalCount + ' elapsed=' + elapsed());
-
               setProgress(80, 'Encoding worksheet XML (' + allRows.length.toLocaleString() + ' rows)...');
               var sheetBytes = buildSheetBytes(headers, allRows, sst.index, setProgress, elapsed);
               log('STEP 8b: sheetBytes=' + (sheetBytes.length/1048576).toFixed(1) + 'MB elapsed=' + elapsed());
-
               setProgress(91, 'Encoding SST XML...');
               var sstBytes = buildSstBytes(sst);
               log('STEP 8c: sstBytes=' + (sstBytes.length/1024).toFixed(0) + 'KB');
-
               setProgress(93, 'Compressing XLSX...');
               var xlsxBytes = buildXlsxZip(fflate, sheetBytes, sstBytes, sheetName);
               var xlsxBlob  = new Blob([xlsxBytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
               log('STEP 8d: xlsxBlob=' + (xlsxBlob.size/1048576).toFixed(1) + 'MB elapsed=' + elapsed());
-
               triggerDownload(xlsxBlob, baseName + '.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
               log('========== EXPORT COMPLETE ==========');
               finish(allRows.length);
 
             } else {
-              // ── Multi-file ZIP ───────────────────────────────────────────
-              // Split allRows into ROWS_PER_FILE chunks
               var chunks = [];
               for (var ci = 0; ci < allRows.length; ci += ROWS_PER_FILE) {
                 chunks.push(allRows.slice(ci, Math.min(ci + ROWS_PER_FILE, allRows.length)));
               }
               log('STEP 8: splitting into ' + chunks.length + ' files of max ' + ROWS_PER_FILE + ' rows');
-
               var zipEntries = {};
               var totalParts = chunks.length;
-
               for (var pi = 0; pi < totalParts; pi++) {
                 var partRows  = chunks[pi];
                 var partLabel = '_part' + (pi + 1);
                 var partName  = baseName + partLabel + '.xlsx';
-                var pctBase   = 76 + Math.round((pi / totalParts) * 18); // 76%-94%
-
-                setProgress(pctBase,
-                  'Building part ' + (pi+1) + ' of ' + totalParts +
+                var pctBase   = 76 + Math.round((pi / totalParts) * 18);
+                setProgress(pctBase, 'Building part ' + (pi+1) + ' of ' + totalParts +
                   ' (' + partRows.length.toLocaleString() + ' rows)...');
-                log('STEP 8 part ' + (pi+1) + '/' + totalParts +
-                    ': rows=' + partRows.length + ' file=' + partName);
-
-                var partSst       = buildSST(headers, partRows);
-                var partSheetB    = buildSheetBytes(headers, partRows, partSst.index, setProgress, elapsed);
-                var partSstB      = buildSstBytes(partSst);
-                // buildXlsxZip returns Uint8Array directly — no Blob/await needed
+                log('STEP 8 part ' + (pi+1) + '/' + totalParts + ': rows=' + partRows.length);
+                var partSst   = buildSST(headers, partRows);
+                var partSheetB = buildSheetBytes(headers, partRows, partSst.index, setProgress, elapsed);
+                var partSstB  = buildSstBytes(partSst);
                 var partBytes = buildXlsxZip(fflate, partSheetB, partSstB, sheetName);
-                // Store in ZIP with level:0 — xlsx already deflated internally
                 zipEntries[partName] = [partBytes, { level: 0 }];
-
-                log('STEP 8 part ' + (pi+1) + ' done. size=' +
-                    (partBytes.length/1048576).toFixed(1) + 'MB elapsed=' + elapsed());
+                log('STEP 8 part ' + (pi+1) + ' done. size=' + (partBytes.length/1048576).toFixed(1) + 'MB elapsed=' + elapsed());
               }
-
               setProgress(95, 'Packaging ZIP (' + totalParts + ' files)...');
-              log('STEP 8: building ZIP with ' + totalParts + ' xlsx files...');
-
               var zipBytes = fflate.zipSync(zipEntries);
               var zipBlob  = new Blob([zipBytes], { type: 'application/zip' });
               log('STEP 8: ZIP blob=' + (zipBlob.size/1048576).toFixed(1) + 'MB elapsed=' + elapsed());
-
               triggerDownload(zipBlob, baseName + '.zip', 'application/zip');
               log('========== EXPORT COMPLETE ==========');
               finish(allRows.length);
@@ -635,8 +567,6 @@ define([
             setError('Export failed: ' + (e && e.message ? e.message : 'Unknown') + ' — see F12 console');
             alert('Export failed:\n' + (e && e.message ? e.message : String(e)));
           });
-
-        }); // end persistentLayoutPromise.then()
 
         }, 50); // end setTimeout — allows browser to paint progress bar before export starts
       });

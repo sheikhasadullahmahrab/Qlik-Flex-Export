@@ -424,3 +424,39 @@ The execution order is now guaranteed:
 1. `app.getObject().getLayout()` resolves → `persistentDimSettings` populated
 2. Session dim builder runs → reads `persistentDimSettings[di].qNullSuppression`
 3. `getEngineApp(app)` → session object creation → fetch → export
+
+---
+
+## v1.3.9 — Clean promise chain for qNullSuppression (replaces v1.3.7/1.3.8)
+
+### Problem with v1.3.7 and v1.3.8
+Both versions introduced variable ordering bugs:
+- v1.3.7: session dim builder ran before `persistentLayoutPromise` resolved
+- v1.3.8: `persistentLayoutPromise.then()` called before `var persistentLayoutPromise` was assigned
+
+Both caused `ReferenceError` or `TypeError` on click.
+
+### Fix — complete rewrite as clean promise chain
+Replaced the tangled block with a single linear promise chain:
+
+```
+app.getObject(layout.qInfo.qId)   // Step A: read persistent layout
+  .then(persObj => persObj.getLayout())
+  .then(persLayout => {
+    // Step B: build session dims with correct qNullSuppression
+    sessionDims = buildSessionDims(persLayout.qHyperCube.qDimensions)
+    return getEngineApp(app)       // Step C: get engine handle
+  })
+  .catch(e => {
+    // Fallback: if persistent layout fails, proceed without null suppression
+    sessionDims = buildSessionDims([])
+    return getEngineApp(app)
+  })
+  .then(eApp => eApp.createSessionObject(...))
+  .then(sessionObj => sessionObj.getLayout())  // get row count
+  .then(...)  // fetch, build, download
+  .catch(...)  // error handling
+```
+
+No `persistentLayoutPromise` variable at all — just `.then()` chaining.
+Execution order is guaranteed by the chain, not by variable timing.
